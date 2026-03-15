@@ -56,13 +56,21 @@ def resolve_pairlist(args: argparse.Namespace, config: dict) -> list[tuple[str, 
     return [parse_pair(e) for e in entries]
 
 
-def load_candles(candle_request: "CandleRequest", data_dir: str, *, step: str = "") -> pd.DataFrame:
+def load_candles(
+    candle_request: "CandleRequest",
+    data_dir: str,
+    *,
+    step: str = "",
+    quiet: bool = False,
+) -> pd.DataFrame:
     """Load cached candle data and print progress."""
-    print(f"\n[{step}] Loading candle data...")
+    if not quiet:
+        print(f"\n[{step}] Loading candle data...")
     t0 = time.time()
     client = TradingViewDataClient(cache_dir=data_dir)
     candles = client.get_history(candle_request, cache_only=True)
-    print(f"      {len(candles)} candles loaded ({_format_time(time.time() - t0)})")
+    if not quiet:
+        print(f"      {len(candles)} candles loaded ({_format_time(time.time() - t0)})")
     return candles
 
 
@@ -74,9 +82,11 @@ def generate_signals(
     end: str | None,
     *,
     step: str = "",
+    quiet: bool = False,
 ) -> tuple[pd.DataFrame, "get_strategy"]:
     """Instantiate strategy, generate signals, and print progress."""
-    print(f"\n[{step}] Generating signals...")
+    if not quiet:
+        print(f"\n[{step}] Generating signals...")
     t0 = time.time()
     strategy = get_strategy(strategy_name)
     signal_settings = {
@@ -88,5 +98,6 @@ def generate_signals(
     signal_frame = strategy.generate_signals(candles, signal_settings)
     buy_count = int(signal_frame["buy_signal"].sum())
     sell_count = int(signal_frame["sell_signal"].sum())
-    print(f"      {buy_count} buy / {sell_count} sell signals ({_format_time(time.time() - t0)})")
+    if not quiet:
+        print(f"      {buy_count} buy / {sell_count} sell signals ({_format_time(time.time() - t0)})")
     return signal_frame, strategy

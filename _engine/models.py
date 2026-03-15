@@ -94,6 +94,16 @@ class BacktestMetrics:
     profit_factor: float
     trade_count: int
     equity_final: float
+    sharpe_ratio: float = 0.0
+    calmar_ratio: float = 0.0
+    expectancy_pct: float = 0.0
+    avg_win_pct: float = 0.0
+    avg_loss_pct: float = 0.0
+    worst_trade_pct: float = 0.0
+    max_consec_losses: int = 0
+    sl_exit_pct: float = 0.0
+    tp_exit_pct: float = 0.0
+    signal_exit_pct: float = 0.0
     rank: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -152,6 +162,15 @@ _ROUNDED_METRIC_FIELDS = (
     "win_rate_pct",
     "profit_factor",
     "equity_final",
+    "sharpe_ratio",
+    "calmar_ratio",
+    "expectancy_pct",
+    "avg_win_pct",
+    "avg_loss_pct",
+    "worst_trade_pct",
+    "sl_exit_pct",
+    "tp_exit_pct",
+    "signal_exit_pct",
 )
 
 

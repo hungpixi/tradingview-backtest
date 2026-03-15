@@ -1,10 +1,44 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 import pandas as pd
 
 from ..models import BacktestMetrics, BacktestResult, CandleRequest, Mode, RiskParameters, Trade
+
+# Approximate number of bars per year for Sharpe annualization.
+_BARS_PER_YEAR: dict[str, float] = {
+    "1":    365 * 24 * 60,   # 1m
+    "3":    365 * 24 * 20,   # 3m
+    "5":    365 * 24 * 12,   # 5m
+    "15":   365 * 24 * 4,    # 15m
+    "30":   365 * 24 * 2,    # 30m
+    "45":   365 * 16,        # 45m
+    "60":   365 * 24,        # 1h
+    "120":  365 * 12,        # 2h
+    "180":  365 * 8,         # 3h
+    "240":  365 * 6,         # 4h
+    "1D":   365,
+    "1W":   52,
+    "1M":   12,
+}
+
+
+def _annualization_factor(timeframe: str) -> float:
+    """Return sqrt(bars-per-year) for Sharpe annualization."""
+    # Timeframe strings: "1h" → "60", "4h" → "240", "1D", "1W", "1M",
+    # or raw minute strings like "60", "240".
+    tf = timeframe.upper().replace(" ", "")
+    # Convert common aliases: "1H" → "60", "4H" → "240", etc.
+    if tf.endswith("H"):
+        hours = tf[:-1]
+        try:
+            tf = str(int(hours) * 60)
+        except ValueError:
+            pass
+    bars = _BARS_PER_YEAR.get(tf, 365 * 24)  # default to 1h
+    return math.sqrt(bars)
 
 
 @dataclass
@@ -212,14 +246,19 @@ class TradingViewLikeBacktester:
         wins = 0
         equity_reference = self.initial_equity
 
+        win_returns: list[float] = []
+        loss_returns: list[float] = []
+
         for trade in trades:
             pnl = trade.equity_after - equity_reference
             equity_reference = trade.equity_after
             if pnl >= 0:
                 positive_pnl += pnl
                 wins += 1
+                win_returns.append(trade.return_pct)
             else:
                 negative_pnl += pnl
+                loss_returns.append(trade.return_pct)
 
         peak = equity_curve[0]
         max_drawdown = 0.0
@@ -242,6 +281,54 @@ class TradingViewLikeBacktester:
         final_equity = trades[-1].equity_after if trades else self.initial_equity
         net_profit_pct = ((final_equity - self.initial_equity) / self.initial_equity) * 100.0
 
+        # --- New metrics ---
+
+        # Per-trade quality
+        avg_win = (sum(win_returns) / len(win_returns)) if win_returns else 0.0
+        avg_loss = (sum(loss_returns) / len(loss_returns)) if loss_returns else 0.0
+        expectancy = (sum(t.return_pct for t in trades) / len(trades)) if trades else 0.0
+        worst_trade = min((t.return_pct for t in trades), default=0.0)
+
+        # Max consecutive losses
+        max_consec = 0
+        cur_consec = 0
+        for t in trades:
+            if t.return_pct < 0:
+                cur_consec += 1
+                if cur_consec > max_consec:
+                    max_consec = cur_consec
+            else:
+                cur_consec = 0
+
+        # Exit reason breakdown
+        n = len(trades) or 1
+        sl_exits = sum(1 for t in trades if t.exit_reason == "stop_loss")
+        tp_exits = sum(1 for t in trades if t.exit_reason == "take_profit")
+        sig_exits = len(trades) - sl_exits - tp_exits
+        sl_exit_pct = sl_exits / n * 100.0
+        tp_exit_pct = tp_exits / n * 100.0
+        signal_exit_pct = sig_exits / n * 100.0
+
+        # Sharpe ratio (annualised, from bar-level equity returns)
+        sharpe = 0.0
+        if len(equity_curve) > 1:
+            returns = []
+            for i in range(1, len(equity_curve)):
+                prev = equity_curve[i - 1]
+                if prev != 0:
+                    returns.append((equity_curve[i] - prev) / prev)
+            if returns:
+                mean_r = sum(returns) / len(returns)
+                var_r = sum((r - mean_r) ** 2 for r in returns) / len(returns)
+                std_r = math.sqrt(var_r)
+                if std_r > 0:
+                    sharpe = (mean_r / std_r) * _annualization_factor(self.candle_request.timeframe)
+
+        # Calmar ratio
+        calmar = 0.0
+        if max_drawdown > 0:
+            calmar = net_profit_pct / max_drawdown
+
         return BacktestMetrics(
             symbol=f"{self.candle_request.exchange}:{self.candle_request.symbol}",
             timeframe=self.candle_request.timeframe,
@@ -256,4 +343,14 @@ class TradingViewLikeBacktester:
             profit_factor=round(profit_factor, 2) if profit_factor != float("inf") else profit_factor,
             trade_count=len(trades),
             equity_final=round(final_equity, 2),
+            sharpe_ratio=round(sharpe, 2),
+            calmar_ratio=round(calmar, 2),
+            expectancy_pct=round(expectancy, 2),
+            avg_win_pct=round(avg_win, 2),
+            avg_loss_pct=round(avg_loss, 2),
+            worst_trade_pct=round(worst_trade, 2),
+            max_consec_losses=max_consec,
+            sl_exit_pct=round(sl_exit_pct, 2),
+            tp_exit_pct=round(tp_exit_pct, 2),
+            signal_exit_pct=round(signal_exit_pct, 2),
         )
