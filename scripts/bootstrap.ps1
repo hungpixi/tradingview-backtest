@@ -26,7 +26,7 @@ function Resolve-RepoUrl {
             }
         }
     }
-    return "https://github.com/<org>/tradingview-backtest.git"
+    return "https://github.com/hungpixi/tradingview-backtest.git"
 }
 
 function Run-Local {

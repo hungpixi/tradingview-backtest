@@ -4,7 +4,7 @@ set -euo pipefail
 MODE="${1:-local}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
-REPO_URL="https://github.com/<org>/tradingview-backtest.git"
+REPO_URL="https://github.com/hungpixi/tradingview-backtest.git"
 
 if command -v git >/dev/null 2>&1; then
   ORIGIN_URL="$(git config --get remote.origin.url 2>/dev/null || true)"

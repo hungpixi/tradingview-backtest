@@ -126,29 +126,47 @@ python -m hyperview list-strategies
 Canonical CLI command is now `tradingview-backtest`.  
 Backwards-compatible aliases still work: `tvbacktest`, `hyperview`, and `python -m hyperview`.
 
+### Before you start
+
+Check which tool you already have:
+
+```bash
+uvx --version
+pipx --version
+python --version
+```
+
+If `uvx` is missing on Windows:
+
+```bash
+winget install --id AstralSoftware.UV -e
+```
+
+If `pipx` is missing:
+
+```bash
+python -m pip install --user pipx
+python -m pipx ensurepath
+```
+
 ### Option A (Recommended, npx-like): `uvx`
 
 ```bash
 # Run directly from GitHub (no long-lived install)
-uvx --from git+https://github.com/<org>/tradingview-backtest.git tradingview-backtest --help
-```
-
-```bash
-# After publishing to PyPI
-uvx tradingview-backtest --help
+uvx --from git+https://github.com/hungpixi/tradingview-backtest.git tradingview-backtest --help
 ```
 
 ### Option B (npm -g-like): `pipx`
 
 ```bash
-pipx install tradingview-backtest
+pipx install git+https://github.com/hungpixi/tradingview-backtest.git
 tradingview-backtest --help
 ```
 
 ### Option C (Universal fallback): `pip`
 
 ```bash
-python -m pip install tradingview-backtest
+python -m pip install git+https://github.com/hungpixi/tradingview-backtest.git
 python -m hyperview --help
 ```
 

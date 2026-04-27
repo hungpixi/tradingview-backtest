@@ -126,29 +126,47 @@ python -m hyperview list-strategies
 Command chuẩn khuyến nghị: `tradingview-backtest`.  
 Alias tương thích vẫn hoạt động: `tvbacktest`, `hyperview`, và `python -m hyperview`.
 
+### Trước khi chạy
+
+Kiểm tra tool bạn đang có:
+
+```bash
+uvx --version
+pipx --version
+python --version
+```
+
+Nếu thiếu `uvx` trên Windows:
+
+```bash
+winget install --id AstralSoftware.UV -e
+```
+
+Nếu thiếu `pipx`:
+
+```bash
+python -m pip install --user pipx
+python -m pipx ensurepath
+```
+
 ### Option A (Khuyến nghị, kiểu npx): `uvx`
 
 ```bash
 # Chạy trực tiếp từ GitHub (không cần cài lâu dài)
-uvx --from git+https://github.com/<org>/tradingview-backtest.git tradingview-backtest --help
-```
-
-```bash
-# Sau khi package phát hành lên PyPI
-uvx tradingview-backtest --help
+uvx --from git+https://github.com/hungpixi/tradingview-backtest.git tradingview-backtest --help
 ```
 
 ### Option B (kiểu npm -g): `pipx`
 
 ```bash
-pipx install tradingview-backtest
+pipx install git+https://github.com/hungpixi/tradingview-backtest.git
 tradingview-backtest --help
 ```
 
 ### Option C (fallback phổ quát): `pip`
 
 ```bash
-python -m pip install tradingview-backtest
+python -m pip install git+https://github.com/hungpixi/tradingview-backtest.git
 python -m hyperview --help
 ```
 
