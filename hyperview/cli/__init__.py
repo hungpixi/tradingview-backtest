@@ -7,6 +7,7 @@ from .download import run_download_data
 from .backtest import run_backtest
 from .hyperopt import run_hyperopt
 from .pine import run_pine_analyze_best_when, run_pine_batch_optimize, run_pine_optimize
+from .tv import run_pine_split, run_tv_backtest_batch, run_tv_optimize
 from .list import run_list_data, run_list_strategies
 
 
@@ -156,6 +157,46 @@ def build_parser() -> argparse.ArgumentParser:
     pa.add_argument("--context-file", default=None, help="Explicit context JSON from pine-optimize")
     pa.add_argument("--min-trades", type=int, default=None, help="Minimum trade count gate for ranking buckets")
     pa.add_argument("--report-dir", default=None, help="Output folder for refreshed reports")
+    # ------ pine-split ------
+    ps = subparsers.add_parser("pine-split", help="Split a bundled Pine file into individual strategy .pine files")
+    ps.add_argument("--input", required=True, help="Input bundled .pine file")
+    ps.add_argument("--out", default="strategies/raw_split", help="Output directory for split strategies")
+
+    # ------ tv-backtest-batch ------
+    tb = subparsers.add_parser("tv-backtest-batch", help="Run TradingView-backed backtest batch for split pine files")
+    tb.add_argument("--input-dir", default="strategies/raw_split", help="Directory of .pine strategy files")
+    tb.add_argument("--symbols", nargs="+", required=True, help="Symbols, e.g. OANDA:XAUUSD COINBASE:BTCUSD")
+    tb.add_argument("--timeframes", nargs="+", required=True, help="Timeframes, e.g. 15m 1h 4h")
+    tb.add_argument("--start", default=None)
+    tb.add_argument("--end", default=None)
+    tb.add_argument("--report-root", default="results/tv_optimizations", help="Output root directory for batch results")
+    tb.add_argument(
+        "--collector-cmd",
+        required=True,
+        help="Shell command to collect TV metrics. Receives payload via TV_RUNNER_PAYLOAD env var and must output JSON.",
+    )
+    tb.add_argument("--timeout-seconds", type=int, default=180, help="Collector timeout in seconds")
+
+    # ------ tv-optimize ------
+    to = subparsers.add_parser("tv-optimize", help="Run TradingView-backed coarse/fine optimization")
+    to.add_argument("--input-dir", default="strategies/raw_split", help="Directory of .pine strategy files")
+    to.add_argument("--symbols", nargs="+", required=True, help="Symbols, e.g. OANDA:XAUUSD COINBASE:BTCUSD")
+    to.add_argument("--timeframes", nargs="+", required=True, help="Timeframes, e.g. 15m 1h 4h")
+    to.add_argument("--start", default=None)
+    to.add_argument("--end", default=None)
+    to.add_argument("--report-root", default="results/tv_optimizations", help="Output root directory for optimization results")
+    to.add_argument("--coarse-trials", type=int, default=30)
+    to.add_argument("--fine-trials", type=int, default=60)
+    to.add_argument("--top-k", type=int, default=5)
+    to.add_argument("--top-n", type=int, default=20)
+    to.add_argument("--fine-span-ratio", type=float, default=0.35)
+    to.add_argument("--seed", type=int, default=42)
+    to.add_argument(
+        "--collector-cmd",
+        required=True,
+        help="Shell command to collect TV metrics. Receives payload via TV_RUNNER_PAYLOAD env var and must output JSON.",
+    )
+    to.add_argument("--timeout-seconds", type=int, default=180, help="Collector timeout in seconds")
     # ------ list-data ------
     subparsers.add_parser("list-data", help="List cached candle datasets")
 
@@ -172,6 +213,9 @@ _COMMANDS = {
     "pine-optimize": run_pine_optimize,
     "pine-batch-optimize": run_pine_batch_optimize,
     "pine-analyze-best-when": run_pine_analyze_best_when,
+    "pine-split": run_pine_split,
+    "tv-backtest-batch": run_tv_backtest_batch,
+    "tv-optimize": run_tv_optimize,
     "list-data": run_list_data,
     "list-strategies": run_list_strategies,
 }
