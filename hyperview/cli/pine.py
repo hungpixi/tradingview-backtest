@@ -13,12 +13,21 @@ from ..pine.analytics import (
     load_context_payload,
     write_analysis_reports,
 )
+from ..pine.exporter import (
+    build_metric_filename,
+    default_filename_template,
+    render_optimized_pine,
+    resolve_optimization_report_dir,
+    sanitize_token,
+    utc_run_id,
+)
 from ..pine.inputs import extract_pine_inputs, resolve_search_dimensions
 from ..pine.optimizer import (
     PineCandidate,
     deserialize_candidate,
     evaluate_with_backtester,
     run_two_stage_optimization,
+    serialize_candidate,
 )
 from .formatting import _resolve, generate_signals, load_candles, resolve_pairlist
 
@@ -56,6 +65,11 @@ def run_pine_optimize(args: argparse.Namespace, config: dict[str, Any]) -> int:
     fine_span_ratio = float(args.fine_span_ratio or config.get("smc", {}).get("fine_span_ratio", 0.35))
     sl_pct = float(args.sl if args.sl is not None else config.get("optimization", {}).get("sl_range", {}).get("min", 1.0))
     tp_pct = float(args.tp if args.tp is not None else config.get("optimization", {}).get("tp_range", {}).get("min", 2.0))
+    emit_optimized_pine = bool(args.emit_optimized_pine)
+    optimized_dir = Path(args.optimized_dir or "strategies/optimized")
+    filename_template = args.filename_template or default_filename_template()
+    strategy_slug = pine_path.stem
+    run_id = utc_run_id()
 
     pairs = resolve_pairlist(args, config)
     if not pairs:
@@ -63,6 +77,7 @@ def run_pine_optimize(args: argparse.Namespace, config: dict[str, Any]) -> int:
         return 1
 
     all_ranked: list[PineCandidate] = []
+    grouped: dict[tuple[str, str], list[PineCandidate]] = {}
     for symbol, exchange in pairs:
         pair_label = f"{exchange}:{symbol}"
         candle_request = CandleRequest(
@@ -121,21 +136,18 @@ def run_pine_optimize(args: argparse.Namespace, config: dict[str, Any]) -> int:
         if not ranked:
             print(f"   • skip {pair_label}: no viable candidate")
             continue
+        grouped[(pair_label, timeframe)] = ranked
         all_ranked.extend(ranked)
 
     if not all_ranked:
         print("Error: No ranked candidates produced.")
         return 1
 
-    reverse = objective != "max_drawdown_pct"
-    all_ranked = sorted(all_ranked, key=lambda item: item.metrics.objective_value(objective), reverse=reverse)
-
     preset_path = Path(args.preset_file) if args.preset_file else strategy_preset_path(output_dir, strategy_name)
-    grouped: dict[tuple[str, str], list[PineCandidate]] = {}
-    for candidate in all_ranked:
-        grouped.setdefault((candidate.pair, candidate.timeframe), []).append(candidate)
-
+    exported_files: list[Path] = []
     for (pair, tf), items in grouped.items():
+        reverse = objective != "max_drawdown_pct"
+        items = sorted(items, key=lambda item: item.metrics.objective_value(objective), reverse=reverse)
         top_items = items[:preset_top_n]
         preset_items: list[dict[str, Any]] = []
         for rank, candidate in enumerate(top_items, start=1):
@@ -170,24 +182,163 @@ def run_pine_optimize(args: argparse.Namespace, config: dict[str, Any]) -> int:
         )
         print(f"   • saved top-{len(top_items)} presets for {pair_exchange}:{pair_symbol}")
 
-    report_dir = Path(args.report_dir) if args.report_dir else Path(output_dir) / "pine_reports"
-    context_payload = context_payload_from_candidates(
-        candidates=all_ranked[:preset_top_n],
-        pine_file=str(pine_path),
-        preset_file=str(preset_path),
-        min_trades=min_trades,
-        initial_capital=initial_capital,
-    )
-    analytics_payload = analyze_best_when(all_ranked[:preset_top_n], min_trades=min_trades)
-    paths = write_analysis_reports(output_dir=report_dir, context_payload=context_payload, analytics_payload=analytics_payload)
-    context_path = report_dir / "pine_optimize_context.json"
-    context_path.write_text(json.dumps(context_payload, indent=2) + "\n", encoding="utf-8")
+        report_dir = resolve_optimization_report_dir(
+            output_dir=output_dir,
+            pair=pair,
+            timeframe=tf,
+            explicit_report_dir=args.report_dir,
+        )
+        context_payload = context_payload_from_candidates(
+            candidates=top_items,
+            pine_file=str(pine_path),
+            preset_file=str(preset_path),
+            min_trades=min_trades,
+            initial_capital=initial_capital,
+        )
+        context_payload["run_id"] = run_id
+        analytics_payload = analyze_best_when(top_items, min_trades=min_trades)
+        paths = write_analysis_reports(output_dir=report_dir, context_payload=context_payload, analytics_payload=analytics_payload)
+        context_path = report_dir / "pine_optimize_context.json"
+        context_path.write_text(json.dumps(context_payload, indent=2) + "\n", encoding="utf-8")
+        top_path = report_dir / "top_candidates.json"
+        top_payload = {
+            "run_id": run_id,
+            "pair": pair,
+            "timeframe": tf,
+            "objective": objective,
+            "items": [serialize_candidate(candidate) for candidate in top_items],
+        }
+        top_path.write_text(json.dumps(top_payload, indent=2) + "\n", encoding="utf-8")
+
+        print(f"✔ Context: {context_path}")
+        print(f"✔ Report : {paths['json']}")
+        print(f"✔ Report VI: {paths['md_vi']}")
+        print(f"✔ Top-N : {top_path}")
+
+        if emit_optimized_pine and top_items:
+            best = top_items[0]
+            optimized_dir.mkdir(parents=True, exist_ok=True)
+            filename = build_metric_filename(
+                template=filename_template,
+                pair=pair,
+                timeframe=tf,
+                strategy_name=strategy_slug,
+                candidate=best,
+            )
+            optimized_path = optimized_dir / filename
+            optimized_source = render_optimized_pine(
+                source_text=pine_text,
+                candidate=best,
+                source_file=str(pine_path),
+                start=args.start,
+                end=args.end,
+                run_id=run_id,
+            )
+            optimized_path.write_text(optimized_source, encoding="utf-8")
+            exported_files.append(optimized_path)
+            print(f"✔ Optimized Pine: {optimized_path}")
 
     print(f"✔ Presets: {preset_path}")
-    print(f"✔ Context: {context_path}")
-    print(f"✔ Report : {paths['json']}")
-    print(f"✔ Report VI: {paths['md_vi']}")
+    if exported_files:
+        print(f"✔ Optimized files exported: {len(exported_files)}")
     return 0
+
+
+def run_pine_batch_optimize(args: argparse.Namespace, config: dict[str, Any]) -> int:
+    input_dir = Path(args.input_dir)
+    if not input_dir.is_dir():
+        print(f"Error: Input directory not found: {input_dir}")
+        return 1
+
+    pine_files = sorted(input_dir.glob("*.pine"))
+    if not pine_files:
+        print(f"Error: No .pine files found in {input_dir}")
+        return 1
+
+    output_dir = config.get("output_dir", "./results")
+    report_root = Path(args.report_root) if args.report_root else Path(output_dir) / "optimizations"
+    timeframes = args.timeframes or [str(_resolve(args, config, "timeframe"))]
+    symbols = args.symbols or [f"{exchange}:{symbol}" for symbol, exchange in resolve_pairlist(args, config)]
+    if not symbols:
+        print("Error: No symbols resolved for batch optimization.")
+        return 1
+
+    leaderboard_rows: list[dict[str, Any]] = []
+    failures = 0
+    for pine_file in pine_files:
+        strategy_slug = sanitize_token(pine_file.stem)
+        for symbol in symbols:
+            for timeframe in timeframes:
+                symbol_slug = sanitize_token(symbol.split(":", 1)[-1])
+                run_report_dir = report_root / symbol_slug / timeframe.lower() / strategy_slug
+                one_args = argparse.Namespace(
+                    pine_file=str(pine_file),
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    start=args.start,
+                    end=args.end,
+                    session=args.session,
+                    adjustment=args.adjustment,
+                    strategy=args.strategy,
+                    mode=args.mode,
+                    objective=args.objective,
+                    coarse_trials=args.coarse_trials,
+                    fine_trials=args.fine_trials,
+                    coarse_top_k=args.coarse_top_k,
+                    preset_top_n=args.preset_top_n,
+                    min_trades=args.min_trades,
+                    min_signals=args.min_signals,
+                    budget_minutes=args.budget_minutes,
+                    watchdog_seconds=args.watchdog_seconds,
+                    fine_span_ratio=args.fine_span_ratio,
+                    sl=args.sl,
+                    tp=args.tp,
+                    preset_file=args.preset_file,
+                    report_dir=str(run_report_dir),
+                    emit_optimized_pine=args.emit_optimized_pine,
+                    optimized_dir=args.optimized_dir,
+                    filename_template=args.filename_template,
+                )
+                print(f"== batch optimize: pine={pine_file.name} symbol={symbol} timeframe={timeframe}")
+                rc = run_pine_optimize(one_args, config)
+                if rc != 0:
+                    failures += 1
+                    continue
+                context_path = run_report_dir / "pine_optimize_context.json"
+                if not context_path.is_file():
+                    continue
+                payload = load_context_payload(context_path)
+                candidates = payload.get("candidates", [])
+                if not candidates:
+                    continue
+                best = candidates[0]
+                metrics = best.get("metrics", {})
+                leaderboard_rows.append(
+                    {
+                        "strategy": strategy_slug,
+                        "symbol": symbol,
+                        "timeframe": timeframe,
+                        "net_profit_pct": metrics.get("net_profit_pct", 0.0),
+                        "max_drawdown_pct": metrics.get("max_drawdown_pct", 0.0),
+                        "profit_factor": metrics.get("profit_factor", 0.0),
+                        "trade_count": metrics.get("trade_count", 0),
+                        "context_file": str(context_path),
+                    }
+                )
+
+    leaderboard_rows.sort(key=lambda item: float(item.get("net_profit_pct", 0.0)), reverse=True)
+    report_root.mkdir(parents=True, exist_ok=True)
+    summary_path = report_root / "leaderboard.json"
+    summary_path.write_text(json.dumps({"items": leaderboard_rows}, indent=2) + "\n", encoding="utf-8")
+    markdown_path = report_root / "leaderboard.md"
+    markdown_path.write_text(_render_batch_markdown(leaderboard_rows), encoding="utf-8")
+    print(f"✔ Batch leaderboard JSON: {summary_path}")
+    print(f"✔ Batch leaderboard MD  : {markdown_path}")
+    if failures:
+        print(f"⚠ Batch completed with failures: {failures}")
+        return 1
+    return 0
+
 
 def run_pine_analyze_best_when(args: argparse.Namespace, config: dict[str, Any]) -> int:
     output_dir = config.get("output_dir", "./results")
@@ -212,3 +363,33 @@ def _infer_context_path(preset_file: str | None, output_dir: str) -> Path:
         if candidate.is_file():
             return candidate
     return Path(output_dir) / "pine_reports" / "pine_optimize_context.json"
+
+
+def _render_batch_markdown(rows: list[dict[str, Any]]) -> str:
+    lines = ["# Pine Batch Optimize Leaderboard", ""]
+    if not rows:
+        lines.append("_No successful optimization runs._")
+        lines.append("")
+        return "\n".join(lines)
+    lines.append("| rank | strategy | symbol | tf | np% | dd% | pf | trades | context |")
+    lines.append("| --- | --- | --- | --- | --- | --- | --- | --- | --- |")
+    for index, row in enumerate(rows, start=1):
+        lines.append(
+            "| "
+            + " | ".join(
+                [
+                    str(index),
+                    str(row.get("strategy", "")),
+                    str(row.get("symbol", "")),
+                    str(row.get("timeframe", "")),
+                    f"{float(row.get('net_profit_pct', 0.0)):.2f}",
+                    f"{float(row.get('max_drawdown_pct', 0.0)):.2f}",
+                    f"{float(row.get('profit_factor', 0.0)):.2f}",
+                    str(int(row.get("trade_count", 0))),
+                    str(row.get("context_file", "")),
+                ]
+            )
+            + " |"
+        )
+    lines.append("")
+    return "\n".join(lines)
