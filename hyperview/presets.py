@@ -23,7 +23,7 @@ _ALLOWED_TOP_LEVEL_KEYS: frozenset[str] = frozenset({"strategy", "updated_at", "
 _ALLOWED_PRESET_KEYS: frozenset[str] = frozenset({
     "pair", "timeframe", "session", "adjustment", "mode",
     "sl", "tp", "objective", "search_method", "updated_at", "metrics",
-    "rank", "map_id", "meta",
+    "rank", "map_id", "session_window", "analysis_tags", "min_trades_gate", "meta",
 })
 
 
@@ -116,6 +116,12 @@ def save_top_presets(
         }
         if item.get("map_id") is not None:
             preset["map_id"] = str(item["map_id"])
+        if item.get("session_window") is not None:
+            preset["session_window"] = str(item["session_window"])
+        if item.get("analysis_tags") is not None:
+            preset["analysis_tags"] = item["analysis_tags"]
+        if item.get("min_trades_gate") is not None:
+            preset["min_trades_gate"] = int(item["min_trades_gate"])
         if item.get("metrics") is not None:
             preset["metrics"] = item["metrics"]
         if item.get("meta") is not None:
@@ -254,6 +260,12 @@ def _validate_payload(payload: dict[str, Any]) -> None:
             raise ValueError(f"Preset file value '{prefix}.rank' must be a positive integer")
         if "map_id" in preset:
             check_non_empty_string(preset.get("map_id"), f"{prefix}.map_id")
+        if "session_window" in preset:
+            check_non_empty_string(preset.get("session_window"), f"{prefix}.session_window")
+        if "analysis_tags" in preset and not isinstance(preset.get("analysis_tags"), list):
+            raise ValueError(f"Preset file value '{prefix}.analysis_tags' must be a list")
+        if "min_trades_gate" in preset and (isinstance(preset.get("min_trades_gate"), bool) or int(preset["min_trades_gate"]) <= 0):
+            raise ValueError(f"Preset file value '{prefix}.min_trades_gate' must be a positive integer")
         if "metrics" in preset:
             _validate_metrics(preset["metrics"], f"{prefix}.metrics")
         if "meta" in preset and not isinstance(preset.get("meta"), dict):

@@ -6,6 +6,7 @@ from ..config import load_config
 from .download import run_download_data
 from .backtest import run_backtest
 from .hyperopt import run_hyperopt
+from .pine import run_pine_analyze_best_when, run_pine_optimize
 from .list import run_list_data, run_list_strategies
 
 
@@ -72,6 +73,39 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Number of Bayesian optimization trials (default: from config or 200)",
     )
+
+    # ------ pine-optimize ------
+    po = subparsers.add_parser("pine-optimize", help="Optimize full Pine strategy input space with adaptive 2-stage search")
+    po.add_argument("--pine-file", required=True, help="Path to Pine strategy file (e.g. smc_swing_strategy.pine)")
+    po.add_argument("--symbol", default=None, help="Single pair (EXCHANGE:SYMBOL); falls back to config pairlist")
+    po.add_argument("--timeframe", default=None)
+    po.add_argument("--start", default=None)
+    po.add_argument("--end", default=None)
+    po.add_argument("--session", default=None)
+    po.add_argument("--adjustment", default="splits")
+    po.add_argument("--strategy", default="smc_swing")
+    po.add_argument("--mode", choices=["long", "short", "both"], default=None)
+    po.add_argument("--objective", choices=["net_profit_pct", "profit_factor", "win_rate_pct", "max_drawdown_pct", "trade_count"], default=None)
+    po.add_argument("--coarse-trials", type=int, default=None)
+    po.add_argument("--fine-trials", type=int, default=None)
+    po.add_argument("--coarse-top-k", type=int, default=None)
+    po.add_argument("--preset-top-n", type=int, default=None)
+    po.add_argument("--min-trades", type=int, default=None)
+    po.add_argument("--min-signals", type=int, default=None)
+    po.add_argument("--budget-minutes", type=int, default=None)
+    po.add_argument("--watchdog-seconds", type=int, default=None)
+    po.add_argument("--fine-span-ratio", type=float, default=None)
+    po.add_argument("--sl", type=float, default=None, help="Fallback static SL%% if dynamic levels are unavailable")
+    po.add_argument("--tp", type=float, default=None, help="Fallback static TP%% if dynamic levels are unavailable")
+    po.add_argument("--preset-file", default=None, help="Output preset file path (default: <output_dir>/<strategy>_presets.json)")
+    po.add_argument("--report-dir", default=None, help="Output folder for JSON/MD/CSV reports")
+
+    # ------ pine-analyze-best-when ------
+    pa = subparsers.add_parser("pine-analyze-best-when", help="Re-analyze best trading windows from saved pine optimization context")
+    pa.add_argument("--preset-file", default=None, help="Preset file used to infer context path")
+    pa.add_argument("--context-file", default=None, help="Explicit context JSON from pine-optimize")
+    pa.add_argument("--min-trades", type=int, default=None, help="Minimum trade count gate for ranking buckets")
+    pa.add_argument("--report-dir", default=None, help="Output folder for refreshed reports")
     # ------ list-data ------
     subparsers.add_parser("list-data", help="List cached candle datasets")
 
@@ -85,6 +119,8 @@ _COMMANDS = {
     "download-data": run_download_data,
     "backtest": run_backtest,
     "hyperopt": run_hyperopt,
+    "pine-optimize": run_pine_optimize,
+    "pine-analyze-best-when": run_pine_analyze_best_when,
     "list-data": run_list_data,
     "list-strategies": run_list_strategies,
 }
