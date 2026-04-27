@@ -41,6 +41,7 @@ def build_parser() -> argparse.ArgumentParser:
     bt.add_argument("--adjustment", default="splits", help="Price adjustment: splits, dividends, none (default: splits)")
     bt.add_argument("--strategy", default=None, help="Strategy name (default: from config)")
     bt.add_argument("--preset-file", default=None, help="Path to a strategy preset file created by hyperopt")
+    bt.add_argument("--preset-rank", type=int, default=None, help="Preset rank to use when a context has multiple presets (default: best rank)")
     bt.add_argument("--sl", type=float, default=None, help="Stop-loss %% (falls back to matching preset file entry)")
     bt.add_argument("--tp", type=float, default=None, help="Take-profit %% (falls back to matching preset file entry)")
     bt.add_argument("--mode", choices=["long", "short", "both"], default=None)
