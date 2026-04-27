@@ -126,6 +126,23 @@ python -m hyperview list-strategies
 Command chuẩn khuyến nghị: `tradingview-backtest`.  
 Alias tương thích vẫn hoạt động: `tvbacktest`, `hyperview`, và `python -m hyperview`.
 
+### Sửa Nhanh (Windows CMD)
+
+Nếu bạn gặp lỗi `The system cannot find the file specified`:
+- không dùng placeholder `<org>`
+- cài `uv` trước (hoặc dùng fallback `pip` bên dưới)
+
+```cmd
+winget install --id AstralSoftware.UV -e
+uvx --from git+https://github.com/hungpixi/tradingview-backtest.git tradingview-backtest --help
+```
+
+```cmd
+:: fallback (gần như luôn chạy nếu đã có Python)
+python -m pip install git+https://github.com/hungpixi/tradingview-backtest.git
+python -m hyperview --help
+```
+
 ### Trước khi chạy
 
 Kiểm tra tool bạn đang có:

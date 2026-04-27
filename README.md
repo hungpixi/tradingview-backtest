@@ -126,6 +126,23 @@ python -m hyperview list-strategies
 Canonical CLI command is now `tradingview-backtest`.  
 Backwards-compatible aliases still work: `tvbacktest`, `hyperview`, and `python -m hyperview`.
 
+### Quick Fix (Windows CMD)
+
+If you got `The system cannot find the file specified`:
+- do not use `<org>` placeholders
+- install `uv` first (or use the `pip` fallback below)
+
+```cmd
+winget install --id AstralSoftware.UV -e
+uvx --from git+https://github.com/hungpixi/tradingview-backtest.git tradingview-backtest --help
+```
+
+```cmd
+:: fallback (always works if Python is installed)
+python -m pip install git+https://github.com/hungpixi/tradingview-backtest.git
+python -m hyperview --help
+```
+
 ### Before you start
 
 Check which tool you already have:
