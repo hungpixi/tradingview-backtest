@@ -43,6 +43,7 @@ def run_pine_optimize(args: argparse.Namespace, config: dict[str, Any]) -> int:
     adjustment = args.adjustment
     data_dir = config.get("data_dir", "./data")
     output_dir = config.get("output_dir", "./results")
+    initial_capital = float(config.get("initial_capital", 100_000.0))
     objective: Objective = args.objective or config.get("optimization", {}).get("objective", "net_profit_pct")
     min_trades = int(args.min_trades or config.get("smc", {}).get("min_signals", 8))
     min_signals = int(args.min_signals or config.get("smc", {}).get("min_signals", 8))
@@ -175,6 +176,7 @@ def run_pine_optimize(args: argparse.Namespace, config: dict[str, Any]) -> int:
         pine_file=str(pine_path),
         preset_file=str(preset_path),
         min_trades=min_trades,
+        initial_capital=initial_capital,
     )
     analytics_payload = analyze_best_when(all_ranked[:preset_top_n], min_trades=min_trades)
     paths = write_analysis_reports(output_dir=report_dir, context_payload=context_payload, analytics_payload=analytics_payload)
@@ -184,6 +186,7 @@ def run_pine_optimize(args: argparse.Namespace, config: dict[str, Any]) -> int:
     print(f"✔ Presets: {preset_path}")
     print(f"✔ Context: {context_path}")
     print(f"✔ Report : {paths['json']}")
+    print(f"✔ Report VI: {paths['md_vi']}")
     return 0
 
 def run_pine_analyze_best_when(args: argparse.Namespace, config: dict[str, Any]) -> int:
@@ -199,6 +202,7 @@ def run_pine_analyze_best_when(args: argparse.Namespace, config: dict[str, Any])
     report_dir = Path(args.report_dir) if args.report_dir else context_path.parent
     paths = write_analysis_reports(output_dir=report_dir, context_payload=payload, analytics_payload=analytics_payload)
     print(f"✔ Re-analysis complete: {paths['json']}")
+    print(f"✔ Re-analysis VI report: {paths['md_vi']}")
     return 0
 
 def _infer_context_path(preset_file: str | None, output_dir: str) -> Path:

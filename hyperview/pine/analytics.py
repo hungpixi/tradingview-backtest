@@ -55,12 +55,15 @@ def write_analysis_reports(
     _write_csv(csv_session_path, analytics_payload["best_by_session_hour"])
     _write_csv(csv_month_path, analytics_payload["best_by_month_quarter"])
     _write_csv(csv_map_hour_path, analytics_payload["best_by_map_hour"])
+    vi_summary_path = out_dir / "README_best_result_vi.md"
+    vi_summary_path.write_text(_render_vietnamese_summary(context_payload, analytics_payload), encoding="utf-8")
     return {
         "json": str(json_path),
         "md": str(md_path),
         "csv_session_hour": str(csv_session_path),
         "csv_month_quarter": str(csv_month_path),
         "csv_map_hour": str(csv_map_hour_path),
+        "md_vi": str(vi_summary_path),
     }
 
 def context_payload_from_candidates(
@@ -69,12 +72,14 @@ def context_payload_from_candidates(
     pine_file: str,
     preset_file: str,
     min_trades: int,
+    initial_capital: float = 100_000.0,
 ) -> dict[str, Any]:
     return {
         "generated_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
         "pine_file": pine_file,
         "preset_file": preset_file,
         "min_trades_gate": min_trades,
+        "initial_capital": float(initial_capital),
         "candidate_count": len(candidates),
         "candidates": [serialize_candidate(candidate) for candidate in candidates],
     }
@@ -175,3 +180,77 @@ def _render_table(title: str, rows: list[dict[str, Any]]) -> list[str]:
     for row in rows[:20]:
         output.append("| " + " | ".join(str(row[key]) for key in keys) + " |")
     return output
+
+def _render_vietnamese_summary(context: dict[str, Any], analysis: dict[str, Any]) -> str:
+    candidates = context.get("candidates", [])
+    if not candidates:
+        return "# Báo Cáo Kết Quả Pine Optimize (Tiếng Việt)\n\nKhông có candidate để tổng hợp.\n"
+    best = candidates[0]
+    metrics = best.get("metrics", {})
+    params = best.get("params", {})
+    initial_capital = float(context.get("initial_capital", 100_000.0))
+    final_equity = float(metrics.get("equity_final", initial_capital))
+    roi = float(metrics.get("net_profit_pct", 0.0))
+    dd = float(metrics.get("max_drawdown_pct", 0.0))
+    profit_factor = float(metrics.get("profit_factor", 0.0))
+    sharpe = float(metrics.get("sharpe_ratio", 0.0))
+    recovery = (roi / dd) if dd > 0 else 0.0
+    net_profit = final_equity - initial_capital
+    lines: list[str] = []
+    lines.append("# Báo Cáo Kết Quả Pine Optimize (Tiếng Việt)")
+    lines.append("")
+    lines.append(f"Ngày tạo: {context.get('generated_at', '')}")
+    lines.append("")
+    lines.append("## 1) Vốn đầu vào")
+    lines.append("")
+    lines.append(f"- Vốn khởi điểm: **{initial_capital:,.2f} USD**")
+    lines.append("")
+    lines.append("## 2) Preset tốt nhất (Rank 1)")
+    lines.append("")
+    lines.append(f"- Pair: `{best.get('pair', '')}`")
+    lines.append(f"- Timeframe: `{best.get('timeframe', '')}`")
+    lines.append(f"- Session window: `{best.get('session_window', '')}`")
+    lines.append(f"- Map: `{best.get('map_id', '')}`")
+    lines.append(f"- Entry mode: `{params.get('entryMode', '')}`")
+    lines.append(f"- SL/TP: `{metrics.get('sl_pct', 0)} / {metrics.get('tp_pct', 0)}`")
+    lines.append("")
+    lines.append("## 3) Chỉ số hiệu suất")
+    lines.append("")
+    lines.append(f"- **ROI**: `{roi:.2f}%`")
+    lines.append(f"- **Net Profit**: `{net_profit:,.2f} USD`")
+    lines.append(f"- **Max Drawdown (DD)**: `{dd:.2f}%`")
+    lines.append(f"- **Profit Factor**: `{profit_factor:.2f}`")
+    lines.append(f"- **Sharpe Ratio**: `{sharpe:.2f}`")
+    lines.append(f"- **Recovery Factor**: `{recovery:.2f}`")
+    lines.append(f"- Win Rate: `{float(metrics.get('win_rate_pct', 0.0)):.2f}%`")
+    lines.append(f"- Trade Count: `{int(metrics.get('trade_count', 0))}`")
+    lines.append("")
+    lines.append("## 4) Khi nào lời nhất (tóm tắt)")
+    lines.append("")
+    session_top = (analysis.get("best_by_session_hour") or [{}])[0]
+    month_top = (analysis.get("best_by_month_quarter") or [{}])[0]
+    map_hour_top = (analysis.get("best_by_map_hour") or [{}])[0]
+    if session_top:
+        lines.append(
+            f"- Theo giờ/phiên: `hour_utc={session_top.get('hour_utc')}` ({session_top.get('session')}) "
+            f"với `net_profit_pct={session_top.get('net_profit_pct')}`"
+        )
+    if month_top:
+        lines.append(
+            f"- Theo tháng/quý: `{month_top.get('month')}` / `{month_top.get('quarter')}` "
+            f"với `net_profit_pct={month_top.get('net_profit_pct')}`"
+        )
+    if map_hour_top:
+        lines.append(
+            f"- Theo map+giờ: `{map_hour_top.get('map_id')}` tại `hour_utc={map_hour_top.get('hour_utc')}` "
+            f"với `net_profit_pct={map_hour_top.get('net_profit_pct')}`"
+        )
+    lines.append("")
+    lines.append("## 5) File tham chiếu")
+    lines.append("")
+    lines.append(f"- Preset: `{context.get('preset_file', '')}`")
+    lines.append("- JSON report: `best_when_report.json`")
+    lines.append("- Markdown report: `best_when_report.md`")
+    lines.append("- Markdown tiếng Việt: `README_best_result_vi.md`")
+    lines.append("")
+    return "\n".join(lines)
